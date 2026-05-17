@@ -21,12 +21,23 @@ settings = get_settings()
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
+    # SameSite policy tracks the Secure flag:
+    #  - dev (REFRESH_COOKIE_SECURE=false, http://localhost): use "lax".
+    #    Browsers reject SameSite=None cookies without Secure, so Lax is
+    #    the only viable option in dev.
+    #  - prod (REFRESH_COOKIE_SECURE=true, https): use "none". Required
+    #    when the frontend (e.g. *.vercel.app) and backend (e.g.
+    #    *.onrender.com) live on different root domains — without it,
+    #    the browser drops the refresh cookie on cross-site requests
+    #    and the silent-refresh flow silently fails after the access
+    #    token's 15-minute TTL.
+    samesite: str = "none" if settings.refresh_cookie_secure else "lax"
     response.set_cookie(
         key=settings.refresh_cookie_name,
         value=token,
         httponly=True,
         secure=settings.refresh_cookie_secure,
-        samesite="lax",
+        samesite=samesite,  # type: ignore[arg-type]
         max_age=settings.jwt_refresh_ttl_days * 24 * 60 * 60,
         path="/api/auth",
         domain=settings.refresh_cookie_domain or None,
