@@ -39,14 +39,16 @@ class ExecTimeout(Exception):
 def _ai_role_database_url() -> str:
     """Mint a connection URL for stocksense_ai_ro from the app DATABASE_URL.
 
-    Replaces only the userinfo segment. We don't want a separate env
-    variable because the host/db/port should always match the app's.
+    Replaces only the userinfo segment — host/db/port always match the
+    app's. The password comes from AI_RO_PASSWORD (env-driven so prod
+    can override the dev default without code changes).
     """
-    base = get_settings().database_url
+    settings = get_settings()
+    base = settings.database_url
     # postgresql+psycopg://user:pass@host:port/db
     proto, rest = base.split("://", 1)
     _userinfo, host_db = rest.split("@", 1)
-    return f"{proto}://stocksense_ai_ro:dev_ai_ro_password@{host_db}"
+    return f"{proto}://stocksense_ai_ro:{settings.ai_ro_password}@{host_db}"
 
 
 _engine = create_engine(_ai_role_database_url(), pool_pre_ping=True)

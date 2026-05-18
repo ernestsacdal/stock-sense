@@ -40,6 +40,7 @@ On the web service, **Environment** tab, add these:
 | `REFRESH_COOKIE_DOMAIN` | *(leave empty)* | Leave blank for separate-host deploys (Vercel + Render) |
 | `OPENROUTER_API_KEY` | Your OpenRouter key | Optional — leave empty to use the deterministic stub |
 | `OPENROUTER_MODEL` | `deepseek/deepseek-chat` | Optional override |
+| `AI_RO_PASSWORD` | The password you used in `CREATE USER stocksense_ai_ro WITH PASSWORD '...'` below | **Required if you set anything other than `dev_ai_ro_password`**. The AI SQL executor uses this to connect as the read-only role. Skip in dev (code default matches the dev convention). |
 
 Click **Save Changes** → Render redeploys.
 

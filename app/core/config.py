@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # qwen/qwen-2.5-72b-instruct, deepseek/deepseek-r1, or any other
     # OpenRouter-hosted model via env without code changes.
     openrouter_model: str = Field(default="deepseek/deepseek-chat")
+    # Password the AI executor uses to connect as stocksense_ai_ro for
+    # SQL safety. Default matches the dev setup so local + tests don't
+    # need to set it; production should override via env var to match
+    # whatever you used when running CREATE USER on the prod DB.
+    ai_ro_password: str = Field(default="dev_ai_ro_password")
 
     jwt_secret: str = Field(...)
     jwt_algorithm: str = Field(default="HS256")
