@@ -90,6 +90,64 @@ NEXT_PUBLIC_API_URL=https://stocksense-api.onrender.com
 
 …and redeploy.
 
+## 6. Keep the backend warm (kill the cold-start UX)
+
+Render's free tier sleeps your service after **15 minutes of zero
+traffic**. The first request after a nap takes ~30 seconds while
+the container boots — bad first impression for whoever's clicking
+your URL.
+
+Fix: ping `/api/health` every 14 minutes from a free uptime monitor.
+Render never sees 15 min of idle, so it never sleeps. Same UX as a
+paid tier, zero cost.
+
+### Set up with cron-job.org (2 minutes, free, no credit card)
+
+1. Sign up at https://cron-job.org (email + password — no card).
+2. **Cronjobs → Create cronjob**.
+3. Fill in:
+   - **Title**: `StockSense keepalive`
+   - **URL**: `https://stocksense-api.onrender.com/api/health`
+     (replace with your actual Render URL)
+   - **Schedule** → switch to **Every 14 minutes**
+     (or under Advanced: minutes `*/14`, every hour, every day)
+4. Save. Click the new job → **Test run** → expect status `200 OK`
+   with body `{"status":"ok","db":"reachable"}`.
+
+That's it. From now on Render thinks your service is being used
+24/7. Anyone clicking your Vercel URL gets a sub-second response,
+day or night.
+
+### Why 14 minutes (not 10 or 15)
+
+- Render's sleep threshold is exactly 15 min.
+- 10 min works but is 4× more requests than needed (cron-job.org's
+  free tier allows 50 jobs, you have headroom but no reason to burn
+  it).
+- 15 min is right at the boundary — a few seconds of clock skew
+  between cron-job.org and Render could let you sleep for one cycle.
+- **14 min = comfortable safety buffer, minimum requests.**
+
+### Is this against Render's terms?
+
+Render's free tier is intended for "occasional traffic". A
+14-minute health check is the same pattern real monitoring tools
+(Pingdom, UptimeRobot, Datadog) use for production services. It's
+gray area — widely practiced for portfolio/student projects, never
+seen anyone account-banned for it. If Render ever cracks down the
+worst case is your service goes back to cold-start behaviour (no
+ban). At that point swap to Fly.io free tier or pay $7/mo for
+Render Starter.
+
+### Alternative pingers (if you don't like cron-job.org)
+
+- **UptimeRobot** (https://uptimerobot.com) — also free, 5-minute
+  minimum interval. Use this if you want a polished dashboard with
+  uptime graphs.
+- **Healthchecks.io** — free for one check at 14-min interval.
+- **GitHub Actions** — cron schedule of `*/14 * * * *`. Free 2000
+  min/month, the cheapest pinger imaginable but more setup.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -99,6 +157,7 @@ NEXT_PUBLIC_API_URL=https://stocksense-api.onrender.com
 | `CORS blocked` in browser console | Your Vercel URL not in `BACKEND_CORS_ORIGINS` | Add it; redeploy backend |
 | Ask returns generic answers | `OPENROUTER_API_KEY` not set or wrong | The badge in the chat will say "stub" if the key isn't reaching the backend |
 | Render free DB expired | 90-day lifecycle ran out | Provision a Neon free tier, swap `DATABASE_URL`, re-run `alembic upgrade head` + `seed_demo` |
+| Cold start on first click despite pinger | cron-job.org had an outage, or your URL in the cron is wrong | Open cron-job.org → check the job's recent run history. A 200 OK every 14 min means it's working; gaps mean the cron skipped. |
 
 ## What's NOT included here
 
