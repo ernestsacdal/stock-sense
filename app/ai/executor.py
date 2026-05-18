@@ -55,12 +55,27 @@ _engine = create_engine(_ai_role_database_url(), pool_pre_ping=True)
 _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 
 
-def execute_safe(sql: str) -> tuple[list[str], list[list[Any]], int]:
-    """Run a (already-validated) SELECT and return columns, rows, duration_ms."""
+def execute_safe(sql: str, user_id: int) -> tuple[list[str], list[list[Any]], int]:
+    """Run a (already-validated) SELECT as stocksense_ai_ro with row-
+    level security scoped to the given user_id. The Postgres RLS
+    policies on items / categories / suppliers / locations /
+    stock_movements filter every row by `owner_id = app.current_user_id`,
+    so even a `SELECT * FROM items` only ever returns the current
+    user's data. Returns (columns, rows, duration_ms)."""
     started = time.perf_counter()
     with _Session() as session:
         try:
-            session.execute(text(f"SET statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+            # set_config(name, value, is_local=true) scopes the setting
+            # to this transaction only — when the connection returns to
+            # the pool it won't leak the user context into the next
+            # request. We use set_config() not `SET LOCAL` because
+            # SET is parser-level and doesn't accept parameter
+            # placeholders. is_local=true matches SET LOCAL's scope.
+            session.execute(
+                text("SELECT set_config('app.current_user_id', :uid, true)"),
+                {"uid": str(user_id)},
+            )
+            session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
             result = session.execute(text(sql))
             columns = list(result.keys())
             rows = []

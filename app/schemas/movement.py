@@ -16,6 +16,7 @@ class MovementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    owner_id: int
     item_id: int
     type: MovementType
     quantity_delta: int

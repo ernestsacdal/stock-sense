@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db, require_role
 from app.models.category import Category
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 from app.schemas.category import CategoryIn, CategoryOut, CategoryUpdate
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
@@ -13,25 +13,38 @@ router = APIRouter(prefix="/api/categories", tags=["categories"])
 _ADMIN_ONLY = Depends(require_role(UserRole.admin))
 
 
-@router.get("", response_model=list[CategoryOut], dependencies=[Depends(get_current_user)])
+def _get_owned_category(db: Session, category_id: int, user_id: int) -> Category:
+    cat = db.get(Category, category_id)
+    if cat is None or cat.owner_id != user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "category not found")
+    return cat
+
+
+@router.get("", response_model=list[CategoryOut])
 def list_categories(
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     limit: int = Query(default=500, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[Category]:
     return list(
         db.scalars(
-            select(Category).order_by(Category.name).limit(limit).offset(offset)
+            select(Category)
+            .where(Category.owner_id == user.id)
+            .order_by(Category.name)
+            .limit(limit)
+            .offset(offset)
         )
     )
 
 
-@router.get("/{category_id}", response_model=CategoryOut, dependencies=[Depends(get_current_user)])
-def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
-    category = db.get(Category, category_id)
-    if category is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "category not found")
-    return category
+@router.get("/{category_id}", response_model=CategoryOut)
+def get_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Category:
+    return _get_owned_category(db, category_id, user.id)
 
 
 @router.post(
@@ -40,8 +53,16 @@ def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
     status_code=status.HTTP_201_CREATED,
     dependencies=[_ADMIN_ONLY],
 )
-def create_category(payload: CategoryIn, db: Session = Depends(get_db)) -> Category:
-    category = Category(name=payload.name, description=payload.description)
+def create_category(
+    payload: CategoryIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Category:
+    category = Category(
+        owner_id=user.id,
+        name=payload.name,
+        description=payload.description,
+    )
     db.add(category)
     try:
         db.commit()
@@ -54,11 +75,12 @@ def create_category(payload: CategoryIn, db: Session = Depends(get_db)) -> Categ
 
 @router.patch("/{category_id}", response_model=CategoryOut, dependencies=[_ADMIN_ONLY])
 def update_category(
-    category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)
+    category_id: int,
+    payload: CategoryUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Category:
-    category = db.get(Category, category_id)
-    if category is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "category not found")
+    category = _get_owned_category(db, category_id, user.id)
 
     if payload.name is not None:
         category.name = payload.name
@@ -77,10 +99,12 @@ def update_category(
 @router.delete(
     "/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_ADMIN_ONLY]
 )
-def delete_category(category_id: int, db: Session = Depends(get_db)) -> None:
-    category = db.get(Category, category_id)
-    if category is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "category not found")
+def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    category = _get_owned_category(db, category_id, user.id)
     try:
         db.delete(category)
         db.commit()

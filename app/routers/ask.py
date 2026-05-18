@@ -102,9 +102,11 @@ async def ask(
         log.generated_sql = result.safe_sql
         db.commit()
 
-        # Step 4 — execute as the read-only role.
+        # Step 4 — execute as the read-only role, with RLS scoped to
+        # this user (Postgres filters every owner-tracked table by
+        # owner_id = user.id even if the LLM forgets a WHERE clause).
         try:
-            columns, rows, duration_ms = execute_safe(result.safe_sql)
+            columns, rows, duration_ms = execute_safe(result.safe_sql, user.id)
         except ExecTimeout as exc:
             log.status = QueryStatus.timeout
             log.error_message = str(exc)

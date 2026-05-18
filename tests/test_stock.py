@@ -404,3 +404,97 @@ def test_items_list_location_name_null_for_locationless_items(client, auth_token
     assert any(
         row["location_id"] is None and row["location_name"] is None for row in listed
     )
+
+
+# --- Multi-tenant isolation -----------------------------------------------
+
+
+def test_user_cannot_see_other_users_items(client, auth_token):
+    """User A creates an item. User B's GET /api/items doesn't see it."""
+    token_a, _ = auth_token(email="alice@test.dev", role="admin")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    cat_a = client.post(
+        "/api/categories", json={"name": "AliceCat"}, headers=headers_a
+    ).json()
+    a_item = client.post(
+        "/api/items",
+        json={"sku": "ALICE-1", "name": "Alice Widget", "category_id": cat_a["id"]},
+        headers=headers_a,
+    ).json()
+    assert a_item["owner_id"]  # sanity: response now exposes owner_id
+
+    token_b, _ = auth_token(email="bob@test.dev", role="admin")
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    bob_items = client.get("/api/items", headers=headers_b).json()
+    assert not any(i["id"] == a_item["id"] for i in bob_items)
+
+
+def test_user_cannot_modify_other_users_items(client, auth_token):
+    """User B's PATCH / DELETE / restock / issue on User A's item all 404."""
+    token_a, _ = auth_token(email="alice2@test.dev", role="admin")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    cat_a = client.post(
+        "/api/categories", json={"name": "AliceCat2"}, headers=headers_a
+    ).json()
+    a_item = client.post(
+        "/api/items",
+        json={
+            "sku": "ALICE-2", "name": "Alice2", "category_id": cat_a["id"],
+            "quantity": 10,
+        },
+        headers=headers_a,
+    ).json()
+    a_id = a_item["id"]
+
+    token_b, _ = auth_token(email="bob2@test.dev", role="admin")
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    # GET — 404 (not 403, we don't leak existence)
+    assert client.get(f"/api/items/{a_id}", headers=headers_b).status_code == 404
+    # PATCH — 404
+    assert client.patch(
+        f"/api/items/{a_id}", json={"name": "Hijacked"}, headers=headers_b
+    ).status_code == 404
+    # Restock — 404
+    assert client.post(
+        f"/api/items/{a_id}/restock", json={"quantity": 1}, headers=headers_b
+    ).status_code == 404
+    # Issue — 404
+    assert client.post(
+        f"/api/items/{a_id}/issue", json={"quantity": 1}, headers=headers_b
+    ).status_code == 404
+    # DELETE — 404
+    assert client.delete(f"/api/items/{a_id}", headers=headers_b).status_code == 404
+
+    # Verify Alice's item is untouched
+    a_after = client.get(f"/api/items/{a_id}", headers=headers_a).json()
+    assert a_after["name"] == "Alice2"
+    assert a_after["quantity"] == 10
+
+
+def test_users_can_reuse_each_others_sku(client, auth_token):
+    """SKU uniqueness is now per-owner (uq_items_owner_sku). User A
+    and User B should both be able to have an item with sku 'COFFEE-1'."""
+    token_a, _ = auth_token(email="alice3@test.dev", role="admin")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    cat_a = client.post(
+        "/api/categories", json={"name": "Shared"}, headers=headers_a
+    ).json()
+    a_resp = client.post(
+        "/api/items",
+        json={"sku": "COFFEE-1", "name": "A's", "category_id": cat_a["id"]},
+        headers=headers_a,
+    )
+    assert a_resp.status_code == 201
+
+    token_b, _ = auth_token(email="bob3@test.dev", role="admin")
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    cat_b = client.post(
+        "/api/categories", json={"name": "Shared"}, headers=headers_b
+    ).json()
+    # Same category name "Shared" should also work (composite unique on owner+name)
+    b_resp = client.post(
+        "/api/items",
+        json={"sku": "COFFEE-1", "name": "B's", "category_id": cat_b["id"]},
+        headers=headers_b,
+    )
+    assert b_resp.status_code == 201

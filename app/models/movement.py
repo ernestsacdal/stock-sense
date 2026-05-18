@@ -23,6 +23,9 @@ class StockMovement(Base):
     __tablename__ = "stock_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     item_id: Mapped[int] = mapped_column(
         ForeignKey("items.id", ondelete="RESTRICT"), nullable=False, index=True
     )

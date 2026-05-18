@@ -27,22 +27,29 @@ def _today() -> datetime:
 
 
 @router.get("/summary", response_model=DashboardSummary)
-def dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
+def dashboard_summary(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DashboardSummary:
     # Total value = sum of quantity * unit_cost across active items.
     total_value_row = db.execute(
         select(func.coalesce(func.sum(Item.quantity * Item.unit_cost), 0))
+        .where(Item.owner_id == user.id)
         .where(Item.archived_at.is_(None))
     ).scalar_one()
     total_value = Decimal(total_value_row)
 
     active_skus = db.scalar(
-        select(func.count(Item.id)).where(Item.archived_at.is_(None))
+        select(func.count(Item.id))
+        .where(Item.owner_id == user.id)
+        .where(Item.archived_at.is_(None))
     ) or 0
 
     today = _today().date()
     cutoff = today + timedelta(days=30)
     expiring_rows = db.execute(
         select(Item.id, Item.quantity, Item.unit_cost)
+        .where(Item.owner_id == user.id)
         .where(Item.archived_at.is_(None))
         .where(Item.expiry_date.is_not(None))
         .where(Item.expiry_date.between(today, cutoff))
@@ -55,6 +62,7 @@ def dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
 
     on_hand_rows = db.execute(
         select(Item.id, Item.reorder_threshold, Item.quantity)
+        .where(Item.owner_id == user.id)
         .where(Item.archived_at.is_(None))
     ).all()
     low_count = 0
@@ -80,6 +88,7 @@ def dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
 @router.get("/value-history", response_model=list[ValueHistoryPoint])
 def value_history(
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     days: int = Query(default=30, ge=7, le=365),
 ) -> list[ValueHistoryPoint]:
     """Walk backward from current total value, undoing each day's net
@@ -88,7 +97,9 @@ def value_history(
 
     cost_by_item = {
         row[0]: row[1] or Decimal(0)
-        for row in db.execute(select(Item.id, Item.unit_cost)).all()
+        for row in db.execute(
+            select(Item.id, Item.unit_cost).where(Item.owner_id == user.id)
+        ).all()
     }
     if not cost_by_item:
         return []
@@ -97,6 +108,7 @@ def value_history(
     current_value = Decimal(
         db.execute(
             select(func.coalesce(func.sum(Item.quantity * Item.unit_cost), 0))
+            .where(Item.owner_id == user.id)
         ).scalar_one()
     )
 
@@ -106,7 +118,9 @@ def value_history(
             StockMovement.created_at,
             StockMovement.item_id,
             StockMovement.quantity_delta,
-        ).where(
+        )
+        .where(StockMovement.owner_id == user.id)
+        .where(
             StockMovement.created_at
             >= datetime.combine(window_start, datetime.min.time(), tzinfo=timezone.utc)
         )
@@ -132,7 +146,9 @@ def value_history(
 
 @router.get("/activity", response_model=list[ActivityItem])
 def activity_feed(
-    db: Session = Depends(get_db), limit: int = Query(default=20, ge=1, le=100)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
 ) -> list[ActivityItem]:
     rows = db.execute(
         select(
@@ -148,6 +164,7 @@ def activity_feed(
         )
         .join(Item, Item.id == StockMovement.item_id)
         .outerjoin(User, User.id == StockMovement.user_id)
+        .where(StockMovement.owner_id == user.id)
         .order_by(StockMovement.created_at.desc())
         .limit(limit)
     ).all()

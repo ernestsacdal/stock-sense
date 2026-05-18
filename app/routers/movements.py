@@ -14,13 +14,17 @@ router = APIRouter(prefix="/api/movements", tags=["movements"])
 @router.get("", response_model=list[MovementOut])
 def list_movements(
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     item_id: int | None = Query(default=None),
     type: MovementType | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[StockMovement]:
-    stmt = select(StockMovement).order_by(StockMovement.created_at.desc())
+    stmt = (
+        select(StockMovement)
+        .where(StockMovement.owner_id == user.id)
+        .order_by(StockMovement.created_at.desc())
+    )
     if item_id is not None:
         stmt = stmt.where(StockMovement.item_id == item_id)
     if type is not None:
@@ -39,8 +43,10 @@ def create_movement(
     with the opposite-sign delta. For everyday +/- use the item's restock
     and issue endpoints; this endpoint is for manual / unusual entries
     (disposed, adjusted, transferred)."""
+    # Item must exist AND belong to this user — otherwise you could
+    # log movements against someone else's inventory.
     item = db.get(Item, payload.item_id)
-    if item is None:
+    if item is None or item.owner_id != user.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "item not found")
 
     new_quantity = item.quantity + payload.quantity_delta
@@ -51,6 +57,7 @@ def create_movement(
         )
 
     movement = StockMovement(
+        owner_id=user.id,
         item_id=payload.item_id,
         type=payload.type,
         quantity_delta=payload.quantity_delta,

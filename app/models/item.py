@@ -11,7 +11,13 @@ class Item(Base):
     __tablename__ = "items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    sku: Mapped[str] = mapped_column(String(60), unique=True, index=True, nullable=False)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Globally non-unique now — uniqueness is per-owner via composite
+    # uq_items_owner_sku constraint (multi-tenant: each user can pick
+    # their own SKU namespace).
+    sku: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True

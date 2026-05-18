@@ -192,3 +192,53 @@ def test_safety_rejected_question_skips_answer(client, auth_token, monkeypatch):
 def test_unauthenticated_ask_rejected(client):
     r = client.post("/api/ask", json={"question": "hi"})
     assert r.status_code == 401
+
+
+def test_ask_ai_isolates_per_user_via_rls(client, auth_token, monkeypatch):
+    """The killer multi-tenant test: even if the LLM generates a bare
+    `SELECT * FROM items LIMIT 100` with no WHERE clause, Postgres RLS
+    blocks rows from other users at the DB layer. User A creates an
+    item. User B's Ask sees zero rows even though the SQL has no owner
+    filter — proving RLS is enforcing isolation at the DB, not relying
+    on the LLM remembering to filter.
+
+    We monkeypatch the LLM to force a `SELECT i.name FROM items i LIMIT 100`
+    so the test doesn't depend on which few-shot the stub picks.
+    """
+    import re
+
+    async def fake_select_all(messages, question):
+        for chunk in re.findall(r"\S+\s*", "SELECT i.name FROM items i LIMIT 100"):
+            yield chunk
+
+    from app.routers import ask as ask_module
+    monkeypatch.setattr(ask_module, "stream_sql", fake_select_all)
+
+    # Alice creates an item.
+    token_a, _ = auth_token(email="rls_alice@test.dev", role="admin")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    cat_a = client.post(
+        "/api/categories", json={"name": "RlsCat"}, headers=headers_a
+    ).json()
+    client.post(
+        "/api/items",
+        json={"sku": "RLS-A-1", "name": "Alice Item", "category_id": cat_a["id"]},
+        headers=headers_a,
+    )
+
+    # Alice asks "list items" — the (forced) SQL has no WHERE owner_id,
+    # but RLS lets her see her own row.
+    a_events = _ask(client, token_a, "list items")
+    a_result = next((d for e, d in a_events if e == "result"), None)
+    assert a_result is not None
+    a_names = [row[0] for row in a_result["rows"]]
+    assert "Alice Item" in a_names
+
+    # Bob — completely fresh user, no items in his workspace.
+    token_b, _ = auth_token(email="rls_bob@test.dev", role="admin")
+    b_events = _ask(client, token_b, "list items")
+    b_result = next((d for e, d in b_events if e == "result"), None)
+    assert b_result is not None
+    # RLS filters Alice's row out — Bob sees an empty result set even
+    # though the SQL itself is `SELECT i.name FROM items i LIMIT 100`.
+    assert b_result["rows"] == []

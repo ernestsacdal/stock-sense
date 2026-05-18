@@ -52,6 +52,7 @@ class ItemSummaryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    owner_id: int
     sku: str
     name: str
     category_id: int
@@ -69,6 +70,7 @@ class ItemOut(ItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    owner_id: int
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

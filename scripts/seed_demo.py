@@ -69,9 +69,9 @@ def main() -> None:
         session.add(admin)
         session.flush()
 
-        # 3) Categories.
+        # 3) Categories — all owned by the admin (this is admin's workspace).
         cats = {
-            name: Category(name=name)
+            name: Category(owner_id=admin.id, name=name)
             for name in ("Beans", "Milk", "Sweeteners", "Cleaning")
         }
         for c in cats.values():
@@ -81,15 +81,18 @@ def main() -> None:
         # 4) Suppliers.
         sups = {
             "Bean Supply Co": Supplier(
+                owner_id=admin.id,
                 name="Bean Supply Co",
                 contact="rep@beansupply.dev",
                 notes="Rep is Mark; orders Fridays only.",
             ),
             "Daily Dairy": Supplier(
+                owner_id=admin.id,
                 name="Daily Dairy",
                 contact="orders@dailydairy.dev",
             ),
             "ChemKing": Supplier(
+                owner_id=admin.id,
                 name="ChemKing",
                 contact="sales@chemking.dev",
             ),
@@ -100,8 +103,8 @@ def main() -> None:
 
         # 5) Locations.
         locs = {
-            "Front Bar": Location(name="Front Bar", type="storage"),
-            "Storeroom": Location(name="Storeroom", type="storage"),
+            "Front Bar": Location(owner_id=admin.id, name="Front Bar", type="storage"),
+            "Storeroom": Location(owner_id=admin.id, name="Storeroom", type="storage"),
         }
         for loc in locs.values():
             session.add(loc)
@@ -132,6 +135,7 @@ def main() -> None:
         for (name, sku, qty, cost, threshold, exp_days,
              cat_name, sup_name, loc_name, notes) in items_data:
             item = Item(
+                owner_id=admin.id,
                 sku=sku,
                 name=name,
                 category_id=cats[cat_name].id,
@@ -227,12 +231,13 @@ def main() -> None:
                 text(
                     """
                     INSERT INTO stock_movements
-                      (item_id, type, quantity_delta, user_id, notes, created_at)
+                      (owner_id, item_id, type, quantity_delta, user_id, notes, created_at)
                     VALUES
-                      (:item_id, :type, :delta, :user_id, :notes, :when)
+                      (:owner_id, :item_id, :type, :delta, :user_id, :notes, :when)
                     """
                 ),
                 {
+                    "owner_id": admin.id,
                     "item_id": items_by_sku[sku].id,
                     "type": MovementType(mtype).value,
                     "delta": delta,

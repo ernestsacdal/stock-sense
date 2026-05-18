@@ -36,6 +36,7 @@ def _summarize(item: Item, location_name: str | None = None) -> ItemSummaryOut:
         status_str = "ok"
     return ItemSummaryOut(
         id=item.id,
+        owner_id=item.owner_id,
         sku=item.sku,
         name=item.name,
         category_id=item.category_id,
@@ -50,9 +51,19 @@ def _summarize(item: Item, location_name: str | None = None) -> ItemSummaryOut:
     )
 
 
-@router.get("", response_model=list[ItemSummaryOut], dependencies=[Depends(get_current_user)])
+def _get_owned_item(db: Session, item_id: int, user_id: int) -> Item:
+    """Fetch an item only if it belongs to the requesting user. Returns
+    404 (not 403) for other users' items — don't leak existence."""
+    item = db.get(Item, item_id)
+    if item is None or item.owner_id != user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    return item
+
+
+@router.get("", response_model=list[ItemSummaryOut])
 def list_items(
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     q: str | None = Query(default=None, description="Match against name or sku"),
     category_id: int | None = None,
     supplier_id: int | None = None,
@@ -65,11 +76,13 @@ def list_items(
     offset: int = Query(default=0, ge=0),
 ) -> list[ItemSummaryOut]:
     # Outer-join Location so the list can display location_name without an
-    # N+1 — matches the supplier_id filter pattern but adds the joined name
-    # for the FE table.
+    # N+1. The location is owner-scoped too, but the join is on
+    # location_id which we already validated belongs to this user when
+    # the item was created.
     stmt = (
         select(Item, Location.name)
         .outerjoin(Location, Item.location_id == Location.id)
+        .where(Item.owner_id == user.id)
     )
     if not include_archived:
         stmt = stmt.where(Item.archived_at.is_(None))
@@ -91,12 +104,13 @@ def list_items(
     return summaries
 
 
-@router.get("/{item_id}", response_model=ItemOut, dependencies=[Depends(get_current_user)])
-def get_item(item_id: int, db: Session = Depends(get_db)) -> Item:
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
-    return item
+@router.get("/{item_id}", response_model=ItemOut)
+def get_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Item:
+    return _get_owned_item(db, item_id, user.id)
 
 
 @router.post(
@@ -107,10 +121,25 @@ def create_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Item:
-    if db.get(Category, payload.category_id) is None:
+    # Validate the referenced category belongs to this user (otherwise
+    # you could attach to someone else's category and leak ownership).
+    cat = db.get(Category, payload.category_id)
+    if cat is None or cat.owner_id != user.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")
+    # Same defensive checks for the optional supplier_id / location_id.
+    if payload.supplier_id is not None:
+        from app.models.supplier import Supplier
+
+        sup = db.get(Supplier, payload.supplier_id)
+        if sup is None or sup.owner_id != user.id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "supplier not found")
+    if payload.location_id is not None:
+        loc = db.get(Location, payload.location_id)
+        if loc is None or loc.owner_id != user.id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "location not found")
 
     item = Item(
+        owner_id=user.id,
         sku=payload.sku,
         name=payload.name,
         category_id=payload.category_id,
@@ -131,6 +160,7 @@ def create_item(
         if payload.quantity and payload.quantity > 0:
             db.add(
                 StockMovement(
+                    owner_id=user.id,
                     item_id=item.id,
                     type=MovementType.added,
                     quantity_delta=payload.quantity,
@@ -148,15 +178,18 @@ def create_item(
 
 @router.patch("/{item_id}", response_model=ItemOut, dependencies=[_WRITE])
 def update_item(
-    item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
+    item_id: int,
+    payload: ItemUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Item:
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    item = _get_owned_item(db, item_id, user.id)
 
     update = payload.model_dump(exclude_unset=True)
-    if "category_id" in update and db.get(Category, update["category_id"]) is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")
+    if "category_id" in update:
+        cat = db.get(Category, update["category_id"])
+        if cat is None or cat.owner_id != user.id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")
 
     for field, value in update.items():
         setattr(item, field, value)
@@ -171,11 +204,13 @@ def update_item(
 
 
 @router.delete("/{item_id}", response_model=ItemOut, dependencies=[_WRITE])
-def archive_item(item_id: int, db: Session = Depends(get_db)) -> Item:
+def archive_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Item:
     """Soft delete: items are never hard-removed (audit-critical)."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    item = _get_owned_item(db, item_id, user.id)
     item.archived_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(item)
@@ -195,9 +230,7 @@ def restock(
 ) -> Item:
     """Add stock: increment quantity, optionally overwrite unit_cost and
     expiry_date with the new shipment's values, log a received movement."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    item = _get_owned_item(db, item_id, user.id)
 
     item.quantity += payload.quantity
     if payload.unit_cost is not None:
@@ -207,6 +240,7 @@ def restock(
 
     db.add(
         StockMovement(
+            owner_id=user.id,
             item_id=item.id,
             type=MovementType.received,
             quantity_delta=payload.quantity,
@@ -232,9 +266,7 @@ def issue(
 ) -> Item:
     """Remove stock: decrement quantity (refuses negative), log an issued
     movement."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    item = _get_owned_item(db, item_id, user.id)
     if item.quantity - payload.quantity < 0:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -244,6 +276,7 @@ def issue(
     item.quantity -= payload.quantity
     db.add(
         StockMovement(
+            owner_id=user.id,
             item_id=item.id,
             type=MovementType.issued,
             quantity_delta=-payload.quantity,

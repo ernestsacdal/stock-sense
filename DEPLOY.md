@@ -149,6 +149,27 @@ Render Starter.
 - **GitHub Actions** — cron schedule of `*/14 * * * *`. Free 2000
   min/month, the cheapest pinger imaginable but more setup.
 
+## 7. Applying migrations on an existing live DB
+
+Whenever you pull new backend code that includes Alembic migrations
+(e.g. the multi-tenant `owner_id` + RLS migration), Render's
+auto-deploy installs the code but **does not run migrations**. You
+have to run `alembic upgrade head` against the live DB yourself.
+
+Render free tier has no Shell access, so do it locally pointed at
+the External Database URL:
+
+```powershell
+cd backend
+.venv\Scripts\Activate.ps1
+$env:DATABASE_URL = "postgresql+psycopg://<paste your External URL with +psycopg prefix>"
+alembic upgrade head
+```
+
+The multi-tenant migration backfills all existing inventory rows to
+the **first admin user** in the `users` table (joe@coffee.dev on the
+demo deploy). New signups get an empty workspace from then on.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
