@@ -2,14 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db, require_role
+from app.deps import get_current_user, get_db
 from app.models.location import Location
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.location import LocationIn, LocationOut, LocationUpdate
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
-
-_WRITE = Depends(require_role(UserRole.admin, UserRole.manager))
 
 
 def _get_owned_location(db: Session, location_id: int, user_id: int) -> Location:
@@ -50,7 +48,6 @@ def get_location(
     "",
     response_model=LocationOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[_WRITE],
 )
 def create_location(
     payload: LocationIn,
@@ -64,7 +61,7 @@ def create_location(
     return loc
 
 
-@router.patch("/{location_id}", response_model=LocationOut, dependencies=[_WRITE])
+@router.patch("/{location_id}", response_model=LocationOut)
 def update_location(
     location_id: int,
     payload: LocationUpdate,
@@ -79,9 +76,7 @@ def update_location(
     return loc
 
 
-@router.delete(
-    "/{location_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_WRITE]
-)
+@router.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_location(
     location_id: int,
     db: Session = Depends(get_db),

@@ -152,19 +152,6 @@ def test_restock_requires_authentication(client):
     assert r.status_code == 401
 
 
-def test_staff_cannot_restock_only_admin_or_manager(client, auth_token):
-    admin_token, _ = auth_token(email="admin2@test.dev", role="admin")
-    item_id = _seed_item(client, admin_token, sku="STAFF-001")
-
-    staff_token, _ = auth_token(email="staff2@test.dev", role="staff")
-    r = client.post(
-        f"/api/items/{item_id}/restock",
-        json={"quantity": 1},
-        headers={"Authorization": f"Bearer {staff_token}"},
-    )
-    assert r.status_code == 403
-
-
 def test_archived_item_does_not_appear_in_default_list(client, auth_token):
     token, _ = auth_token(role="admin")
     headers = {"Authorization": f"Bearer {token}"}

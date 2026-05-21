@@ -5,12 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db, require_role
+from app.deps import get_current_user, get_db
 from app.models.category import Category
 from app.models.item import Item
 from app.models.location import Location
 from app.models.movement import MovementType, StockMovement
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.item import (
     IssueIn,
     ItemIn,
@@ -21,8 +21,6 @@ from app.schemas.item import (
 )
 
 router = APIRouter(prefix="/api/items", tags=["items"])
-
-_WRITE = Depends(require_role(UserRole.admin, UserRole.manager))
 
 
 def _summarize(item: Item, location_name: str | None = None) -> ItemSummaryOut:
@@ -114,7 +112,7 @@ def get_item(
 
 
 @router.post(
-    "", response_model=ItemOut, status_code=status.HTTP_201_CREATED, dependencies=[_WRITE]
+    "", response_model=ItemOut, status_code=status.HTTP_201_CREATED,
 )
 def create_item(
     payload: ItemIn,
@@ -176,7 +174,7 @@ def create_item(
     return item
 
 
-@router.patch("/{item_id}", response_model=ItemOut, dependencies=[_WRITE])
+@router.patch("/{item_id}", response_model=ItemOut)
 def update_item(
     item_id: int,
     payload: ItemUpdate,
@@ -203,7 +201,7 @@ def update_item(
     return item
 
 
-@router.delete("/{item_id}", response_model=ItemOut, dependencies=[_WRITE])
+@router.delete("/{item_id}", response_model=ItemOut)
 def archive_item(
     item_id: int,
     db: Session = Depends(get_db),
@@ -220,7 +218,6 @@ def archive_item(
 @router.post(
     "/{item_id}/restock",
     response_model=ItemOut,
-    dependencies=[_WRITE],
 )
 def restock(
     item_id: int,
@@ -256,7 +253,6 @@ def restock(
 @router.post(
     "/{item_id}/issue",
     response_model=ItemOut,
-    dependencies=[_WRITE],
 )
 def issue(
     item_id: int,

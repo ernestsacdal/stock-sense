@@ -3,14 +3,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db, require_role
+from app.deps import get_current_user, get_db
 from app.models.category import Category
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.category import CategoryIn, CategoryOut, CategoryUpdate
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
-
-_ADMIN_ONLY = Depends(require_role(UserRole.admin))
 
 
 def _get_owned_category(db: Session, category_id: int, user_id: int) -> Category:
@@ -51,7 +49,6 @@ def get_category(
     "",
     response_model=CategoryOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[_ADMIN_ONLY],
 )
 def create_category(
     payload: CategoryIn,
@@ -73,7 +70,7 @@ def create_category(
     return category
 
 
-@router.patch("/{category_id}", response_model=CategoryOut, dependencies=[_ADMIN_ONLY])
+@router.patch("/{category_id}", response_model=CategoryOut)
 def update_category(
     category_id: int,
     payload: CategoryUpdate,
@@ -96,9 +93,7 @@ def update_category(
     return category
 
 
-@router.delete(
-    "/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_ADMIN_ONLY]
-)
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_category(
     category_id: int,
     db: Session = Depends(get_db),

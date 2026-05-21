@@ -30,7 +30,7 @@ from app.models.location import Location
 from app.models.movement import MovementType, StockMovement
 from app.models.query_log import QueryLog
 from app.models.supplier import Supplier
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,6 @@ def main() -> None:
         admin = User(
             email=ADMIN_EMAIL,
             password_hash=hash_password(ADMIN_PASSWORD),
-            role=UserRole.admin,
             business_name=ADMIN_BUSINESS_NAME,
         )
         session.add(admin)

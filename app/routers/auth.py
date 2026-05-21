@@ -12,7 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.deps import get_current_user, get_db
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.auth import AccessTokenOut, LoginIn, ProfileUpdateIn, RegisterIn
 from app.schemas.user import UserOut
 
@@ -63,7 +63,6 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> User:
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
-        role=UserRole.staff,
         business_name=payload.business_name,
     )
     db.add(user)
@@ -81,7 +80,7 @@ def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)) -
         )
 
     _set_refresh_cookie(response, create_refresh_token(user.id))
-    return AccessTokenOut(access_token=create_access_token(user.id, user.role.value))
+    return AccessTokenOut(access_token=create_access_token(user.id))
 
 
 @router.post("/refresh", response_model=AccessTokenOut)
@@ -107,7 +106,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
 
     # Rotate the refresh token on every successful refresh.
     _set_refresh_cookie(response, create_refresh_token(user.id))
-    return AccessTokenOut(access_token=create_access_token(user.id, user.role.value))
+    return AccessTokenOut(access_token=create_access_token(user.id))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

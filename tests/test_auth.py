@@ -7,7 +7,7 @@ admin role guard end to end through the FastAPI test client.
 from __future__ import annotations
 
 
-def test_register_creates_staff_user(client):
+def test_register_creates_user(client):
     r = client.post(
         "/api/auth/register",
         json={"email": "alice@test.dev", "password": "alicepass123"},
@@ -15,7 +15,6 @@ def test_register_creates_staff_user(client):
     assert r.status_code == 201
     body = r.json()
     assert body["email"] == "alice@test.dev"
-    assert body["role"] == "staff"
     assert "id" in body and "created_at" in body
 
 
@@ -208,20 +207,3 @@ def test_logout_clears_refresh_cookie(client):
     assert client.post("/api/auth/refresh").status_code == 401
 
 
-def test_admin_endpoint_rejects_staff(client, auth_token):
-    token, _ = auth_token(email="staff@test.dev", role="staff")
-    r = client.get(
-        "/api/admin/users",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert r.status_code == 403
-
-
-def test_admin_endpoint_allows_admin(client, auth_token):
-    token, _ = auth_token(email="admin@test.dev", role="admin")
-    r = client.get(
-        "/api/admin/users",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert r.status_code == 200
-    assert any(u["email"] == "admin@test.dev" for u in r.json())

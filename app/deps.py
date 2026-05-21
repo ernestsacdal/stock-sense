@@ -1,11 +1,11 @@
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.core.security import TokenError, decode_token
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -42,17 +42,3 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
     return user
-
-
-def require_role(*allowed: UserRole) -> Callable[[User], User]:
-    """Factory: returns a dependency that 403s unless current user is in `allowed`."""
-
-    def _dep(user: User = Depends(get_current_user)) -> User:
-        if user.role not in allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"role {user.role.value!r} cannot access this resource",
-            )
-        return user
-
-    return _dep

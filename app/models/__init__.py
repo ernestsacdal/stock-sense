@@ -5,7 +5,7 @@ from app.models.location import Location
 from app.models.movement import MovementType, StockMovement
 from app.models.query_log import QueryLog, QueryStatus
 from app.models.supplier import Supplier
-from app.models.user import User, UserRole
+from app.models.user import User
 
 __all__ = [
     "Base",
@@ -18,5 +18,4 @@ __all__ = [
     "StockMovement",
     "Supplier",
     "User",
-    "UserRole",
 ]

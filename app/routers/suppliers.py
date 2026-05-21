@@ -3,14 +3,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db, require_role
+from app.deps import get_current_user, get_db
 from app.models.supplier import Supplier
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.supplier import SupplierIn, SupplierOut, SupplierUpdate
 
 router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
-
-_WRITE = Depends(require_role(UserRole.admin, UserRole.manager))
 
 
 def _get_owned_supplier(db: Session, supplier_id: int, user_id: int) -> Supplier:
@@ -51,7 +49,6 @@ def get_supplier(
     "",
     response_model=SupplierOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[_WRITE],
 )
 def create_supplier(
     payload: SupplierIn,
@@ -69,7 +66,7 @@ def create_supplier(
     return s
 
 
-@router.patch("/{supplier_id}", response_model=SupplierOut, dependencies=[_WRITE])
+@router.patch("/{supplier_id}", response_model=SupplierOut)
 def update_supplier(
     supplier_id: int,
     payload: SupplierUpdate,
@@ -88,9 +85,7 @@ def update_supplier(
     return s
 
 
-@router.delete(
-    "/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_WRITE]
-)
+@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),

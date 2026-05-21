@@ -7,7 +7,6 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.db import engine
 from app.routers import (
-    admin,
     ask,
     auth,
     categories,
@@ -41,7 +40,6 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(admin.router)
 app.include_router(categories.router)
 app.include_router(locations.router)
 app.include_router(suppliers.router)

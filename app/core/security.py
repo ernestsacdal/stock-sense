@@ -28,9 +28,9 @@ def _truncate(plain: str) -> bytes:
     return plain.encode("utf-8")[:_BCRYPT_MAX]
 
 
-def create_access_token(subject: str | int, role: str) -> str:
+def create_access_token(subject: str | int) -> str:
     return _encode(
-        {"sub": str(subject), "role": role, "type": "access"},
+        {"sub": str(subject), "type": "access"},
         timedelta(minutes=settings.jwt_access_ttl_min),
     )
 

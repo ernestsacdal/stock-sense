@@ -82,19 +82,16 @@ def auth_token(client: TestClient):
     def _register_and_login(
         email: str = "test@stocksense.dev",
         password: str = "testpass123",
-        role: str = "staff",
+        role: str | None = None,  # noqa: ARG001 — kept for back-compat with
+        # existing callers that pass role="admin". RBAC was removed when the
+        # multi-tenant refactor made every user the sole owner of their own
+        # workspace (migration 95238bae6720). Param is a no-op; remove this
+        # whole kwarg + the unused-arg suppression once callers are updated.
     ) -> tuple[str, dict]:
         client.post(
             "/api/auth/register",
             json={"email": email, "password": password},
         )
-        if role != "staff":
-            # Promote in DB directly — admin promote endpoint requires admin token.
-            with engine.begin() as conn:
-                conn.execute(
-                    text("UPDATE users SET role = :r WHERE email = :e"),
-                    {"r": role, "e": email},
-                )
         login = client.post(
             "/api/auth/login",
             json={"email": email, "password": password},
