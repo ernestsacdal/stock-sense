@@ -19,8 +19,8 @@ class Item(Base):
     # their own SKU namespace).
     sku: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    category_id: Mapped[int] = mapped_column(
-        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
     supplier_id: Mapped[int | None] = mapped_column(
         ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True, index=True

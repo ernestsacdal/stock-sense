@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ItemBase(BaseModel):
     sku: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=255)
-    category_id: int
+    category_id: int | None = None
     supplier_id: int | None = None
     location_id: int | None = None
     reorder_threshold: int | None = None
@@ -55,7 +55,7 @@ class ItemSummaryOut(BaseModel):
     owner_id: int
     sku: str
     name: str
-    category_id: int
+    category_id: int | None
     supplier_id: int | None
     location_id: int | None
     location_name: str | None = None

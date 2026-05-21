@@ -121,9 +121,11 @@ def create_item(
 ) -> Item:
     # Validate the referenced category belongs to this user (otherwise
     # you could attach to someone else's category and leak ownership).
-    cat = db.get(Category, payload.category_id)
-    if cat is None or cat.owner_id != user.id:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")
+    # Category is optional — skip the lookup if none was supplied.
+    if payload.category_id is not None:
+        cat = db.get(Category, payload.category_id)
+        if cat is None or cat.owner_id != user.id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")
     # Same defensive checks for the optional supplier_id / location_id.
     if payload.supplier_id is not None:
         from app.models.supplier import Supplier
@@ -184,7 +186,7 @@ def update_item(
     item = _get_owned_item(db, item_id, user.id)
 
     update = payload.model_dump(exclude_unset=True)
-    if "category_id" in update:
+    if "category_id" in update and update["category_id"] is not None:
         cat = db.get(Category, update["category_id"])
         if cat is None or cat.owner_id != user.id:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "category not found")

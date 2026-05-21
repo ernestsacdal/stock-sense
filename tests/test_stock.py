@@ -485,3 +485,66 @@ def test_users_can_reuse_each_others_sku(client, auth_token):
         headers=headers_b,
     )
     assert b_resp.status_code == 201
+
+
+def test_item_create_succeeds_without_category(client, auth_token):
+    """Category is now optional on items — a small-business workflow
+    often wants to add an item before deciding how to file it."""
+    token, _ = auth_token(role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.post(
+        "/api/items",
+        json={"sku": "UNCAT-001", "name": "Uncategorised thing"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.json()
+    body = r.json()
+    assert body["category_id"] is None
+
+
+def test_delete_category_with_items_clears_their_category_id(client, auth_token):
+    """Deleting a category that still has items pointing at it used to
+    409. With ON DELETE SET NULL on items.category_id, the delete now
+    succeeds and the items become uncategorised."""
+    token, _ = auth_token(role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    cat = client.post(
+        "/api/categories", json={"name": "Doomed"}, headers=headers
+    ).json()
+    item = client.post(
+        "/api/items",
+        json={"sku": "ORPHAN-001", "name": "Orphan", "category_id": cat["id"]},
+        headers=headers,
+    ).json()
+    assert item["category_id"] == cat["id"]
+
+    r = client.delete(f"/api/categories/{cat['id']}", headers=headers)
+    assert r.status_code == 204
+
+    # Item still exists, but its category_id has been cleared.
+    after = client.get(f"/api/items/{item['id']}", headers=headers).json()
+    assert after["category_id"] is None
+
+
+def test_item_update_can_clear_category_explicitly(client, auth_token):
+    """PATCHing category_id to null detaches the item from its category."""
+    token, _ = auth_token(role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    cat = client.post(
+        "/api/categories", json={"name": "Temp"}, headers=headers
+    ).json()
+    item = client.post(
+        "/api/items",
+        json={"sku": "DETACH-001", "name": "Detach me", "category_id": cat["id"]},
+        headers=headers,
+    ).json()
+
+    r = client.patch(
+        f"/api/items/{item['id']}",
+        json={"category_id": None},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["category_id"] is None
